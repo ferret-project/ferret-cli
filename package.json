@@ -1,0 +1,25 @@
+{
+  "name": "ferret-cli",
+  "version": "0.1.0",
+  "description": "Check what a Ferret signed — a thing's export or a backup — and export from one",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "ferret": "dist/cli.js" },
+  "files": ["dist"],
+  "engines": { "node": ">=22.6" },
+  "repository": { "type": "git", "url": "git+https://github.com/ferret-project/ferret-cli.git" },
+  "homepage": "https://github.com/ferret-project/ferret-cli#readme",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.ts",
+    "ferret": "node src/cli.ts"
+  },
+  "dependencies": {
+    "fflate": "0.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
