@@ -13,7 +13,9 @@ const exportKey = readFileSync(path.join(fixtures, "export-fingerprint.txt"), "u
 
 function ferret(args: string[], env: Record<string, string> = {}, stdin?: string) {
   return new Promise<{ code: number; out: string; err: string }>((resolve) => {
-    const child = spawn(process.execPath, [cli, ...args], { env: { PATH: process.env.PATH, ...env } });
+    // FERRET_BIN: a compiled binary (the release workflow tests what it ships); else the source, on this Node.
+    const [cmd, pre] = process.env.FERRET_BIN ? [process.env.FERRET_BIN, []] : [process.execPath, [cli]];
+    const child = spawn(cmd, [...pre, ...args], { env: { PATH: process.env.PATH, ...env } });
     let out = "";
     let err = "";
     child.stdout.on("data", (d) => (out += d));
@@ -38,7 +40,7 @@ describe("ferret", () => {
     const good = await ferret(["verify", path.join(fixtures, "export.zip")], env);
     assert.equal(good.code, 0);
     assert.match(good.out, /good — signed by Home/);
-    assert.equal(statSync(env.FERRET_CONFIG).mode & 0o777, 0o600);
+    if (process.platform !== "win32") assert.equal(statSync(env.FERRET_CONFIG).mode & 0o777, 0o600);
 
     // --fingerprint for one check, without the config.
     assert.equal((await ferret(["verify", path.join(fixtures, "export.zip"), "--fingerprint", exportKey], freshConfig())).code, 0);

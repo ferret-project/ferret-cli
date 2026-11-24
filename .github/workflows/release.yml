@@ -1,0 +1,90 @@
+# A tag v<version> builds `ferret` for each platform as one file (Bun's --compile: no Node needed), tests each on its
+# own kind of machine where GitHub has one, and publishes them on the release with SHA256SUMS and GitHub's build
+# attestations (`gh attestation verify <file> --repo ferret-project/ferret-cli`).
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { target: bun-linux-x64, name: ferret-linux-x64, runner: ubuntu-latest, test: true }
+          - { target: bun-linux-arm64, name: ferret-linux-arm64, runner: ubuntu-24.04-arm, test: true }
+          - { target: bun-darwin-arm64, name: ferret-macos-arm64, runner: macos-latest, test: true }
+          - { target: bun-darwin-x64, name: ferret-macos-x64, runner: macos-latest, test: false }
+          - { target: bun-windows-x64, name: ferret-windows-x64, runner: windows-latest, test: true, exe: true }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.5
+      - run: npm ci
+      - name: Version matches the tag
+        shell: bash
+        run: test "v$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME}"
+      - run: npm test
+      - name: Build
+        shell: bash
+        run: bun build src/cli.ts --compile --minify --target=${{ matrix.target }} --outfile "out/${{ matrix.name }}${{ matrix.exe && '.exe' || '' }}"
+      - name: Test the binary
+        if: matrix.test
+        shell: bash
+        run: |
+          "out/${{ matrix.name }}${{ matrix.exe && '.exe' || '' }}" --version
+          FERRET_BIN="$PWD/out/${{ matrix.name }}${{ matrix.exe && '.exe' || '' }}" node --test test/cli.test.ts
+      - name: Package
+        shell: bash
+        run: |
+          cd out
+          if [ "${{ matrix.exe }}" = "true" ]; then
+            mv "${{ matrix.name }}.exe" ferret.exe && 7z a -tzip "${{ matrix.name }}.zip" ferret.exe >/dev/null
+          else
+            mv "${{ matrix.name }}" ferret && chmod +x ferret && tar czf "${{ matrix.name }}.tar.gz" ferret
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: out/${{ matrix.name }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/ferret-*
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Download the file for your system, unpack it, and put \`ferret\` somewhere on your PATH — see the README's Install section."
+            echo
+            echo "Check a download: \`sha256sum -c SHA256SUMS --ignore-missing\`, and that GitHub built it here: \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`."
+            echo
+            echo "## Changes"
+            git log --format='- %s' "$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || git rev-list --max-parents=0 HEAD)..${GITHUB_REF_NAME}"
+          } > notes.md
+          gh release create "${GITHUB_REF_NAME}" dist/* --title "ferret ${GITHUB_REF_NAME#v}" --notes-file notes.md

@@ -138,7 +138,8 @@ export async function verifyBackup(dir: string, snapshot: string, trusted: Trust
     report.problems.push("Its manifest can't be read");
     return report;
   }
-  report.what = `${snapshot} (${manifest.counts ? `${manifest.counts.items} things, ` : ""}${manifest.files.length} files)`;
+  const n = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+  report.what = `${snapshot} (${manifest.counts ? `${n(manifest.counts.items, "thing", "things")}, ` : ""}${n(manifest.files.length, "file", "files")})`;
   const sigFile = at(`snapshots/${snapshot}.json.sig`);
   if (!existsSync(sigFile)) {
     report.verdict = "unsigned";

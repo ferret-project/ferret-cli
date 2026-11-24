@@ -16,7 +16,27 @@ check doesn't rest on the key that came with the files.
 
 ## Install
 
-Needs Node.js 22.6 or newer.
+Download `ferret` for your system from the [latest release](https://github.com/ferret-project/ferret-cli/releases/latest)
+— one file, nothing else needed:
+
+```bash
+# Linux (x64; use ferret-linux-arm64 on a Raspberry Pi or other ARM machine)
+curl -fsSL https://github.com/ferret-project/ferret-cli/releases/latest/download/ferret-linux-x64.tar.gz | tar xz
+sudo mv ferret /usr/local/bin/
+
+# macOS (Apple silicon; ferret-macos-x64 for Intel)
+curl -fsSL https://github.com/ferret-project/ferret-cli/releases/latest/download/ferret-macos-arm64.tar.gz | tar xz
+sudo mv ferret /usr/local/bin/
+```
+
+On Windows, unzip `ferret-windows-x64.zip` and put `ferret.exe` on your PATH.
+
+Each release has `SHA256SUMS`, and GitHub's record that it built the files from this repository:
+`gh attestation verify ferret-linux-x64.tar.gz --repo ferret-project/ferret-cli`.
+
+### From source
+
+Needs Node.js 22.6 or newer:
 
 ```bash
 git clone https://github.com/ferret-project/ferret-cli.git
