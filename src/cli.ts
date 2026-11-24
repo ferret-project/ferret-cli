@@ -2,12 +2,12 @@
 /**
  * ferret — check what a Ferret signed, and export from one.
  *
- *   ferret verify <export.zip | export folder | backup folder>    check a thing's export or a backup
+ *   ferret verify <export.zip | file.pdf | export folder | backup folder>   check an export, a signed PDF or a backup
  *   ferret fingerprint <file>                                     a key's (or an export's / backup's) fingerprint
  *   ferret trust add exports|backups <fingerprint> [--name N]     keys you accept
  *   ferret trust list | remove <fingerprint> | pull               (pull: your household's export key, from the server)
  *   ferret config set url <url> | set api-key | show              where your Ferret is, and its API key (from stdin)
- *   ferret export <id or words> [--out DIR] [--parts a,b]         a thing's signed export, by id or search
+ *   ferret export <id or words> [--pdf] [--out DIR] [--parts a,b] a thing's signed ZIP (or PDF), by id or search
  *
  * Exit codes: 0 good · 1 something's wrong (changed, missing, bad signature) · 2 usage · 3 signed by a key you don't
  * trust · 4 not signed.
@@ -19,17 +19,18 @@ import { unzipSync } from "fflate";
 import { type Config, type TrustKind, configPath, loadConfig, saveConfig, server } from "./config.ts";
 import { PARTS, downloadExport, householdKey, search } from "./api.ts";
 import { fingerprint, normalizeFingerprint, parsePublicKey } from "./sshsig.ts";
-import { type Report, snapshotsIn, verifyBackup, verifyExport } from "./verify.ts";
+import { type Report, isPdf, snapshotsIn, splitSignedPdf, verifyBackup, verifyExport, verifyPdf } from "./verify.ts";
+import { verify as verifySig } from "./sshsig.ts";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 const HELP = `ferret ${VERSION} — check what a Ferret signed, and export from one
 
 Usage:
   ferret verify <path> [--fingerprint FP]... [--all] [--snapshot NAME] [--json]
-      <path> is a thing's export (.zip, or the folder it unzips to) or a backup folder.
+      <path> is a thing's export (.zip, or the folder it unzips to), its signed PDF, or a backup folder.
       Backups: the newest snapshot, --snapshot NAME, or --all.
       --fingerprint: a key to accept for this check, besides the trusted ones in your config.
-  ferret fingerprint <file.pub | allowed_signers | export.zip | backup folder>
+  ferret fingerprint <file.pub | allowed_signers | export.zip | signed .pdf | backup folder>
   ferret trust add exports|backups <fingerprint> [--name NAME]
   ferret trust remove <fingerprint>
   ferret trust list
@@ -37,7 +38,8 @@ Usage:
   ferret config set url <https://your-ferret>
   ferret config set api-key         reads the key from stdin (so it stays out of your shell history)
   ferret config show
-  ferret export <item id | words> [--out DIR] [--parts photos,documents,…] [--verify]
+  ferret export <item id | words> [--pdf] [--out DIR] [--parts photos,documents,…] [--verify]
+      the signed ZIP, or with --pdf the signed PDF
 
 Settings: ${configPath()} (FERRET_URL, FERRET_API_KEY and FERRET_CONFIG override it).
 Exit codes: 0 good, 1 changed or broken, 2 usage, 3 signed by a key you don't trust, 4 not signed.`;
@@ -71,7 +73,7 @@ async function verifyCommand(args: string[], config: Config) {
   const target = positionals[0];
   if (!target) throw new Usage("verify: which file or folder?");
   if (!existsSync(target)) throw new Error(`${target} doesn't exist`);
-  const extra = (values.fingerprint ?? []).map((fp) => ({ fingerprint: normalizeFingerprint(fp), name: "--fingerprint" }));
+  const extra = (values.fingerprint ?? []).map((fp) => ({ fingerprint: normalizeFingerprint(fp), name: "the fingerprint you gave" }));
   const reports: Report[] = [];
   if (isBackupFolder(target)) {
     const trusted = [...(config.trust?.backups ?? []), ...extra];
@@ -82,6 +84,8 @@ async function verifyCommand(args: string[], config: Config) {
       if (!all.includes(s)) throw new Error(`No snapshot ${s} (there are: ${all.slice(0, 5).join(", ")}…)`);
       reports.push(await verifyBackup(target, s, trusted));
     }
+  } else if (isPdf(target)) {
+    reports.push(await verifyPdf(target, [...(config.trust?.exports ?? []), ...extra]));
   } else {
     reports.push(await verifyExport(target, [...(config.trust?.exports ?? []), ...extra]));
   }
@@ -97,6 +101,12 @@ async function fingerprintCommand(args: string[]) {
     const pub = [path.join(target, "signing-key.pub"), path.join(target, "ferret-signing-key.pub")].find(existsSync);
     if (!pub) throw new Error("No signing-key.pub in that folder");
     keyText = readFileSync(pub, "utf8");
+  } else if (isPdf(target)) {
+    // A signed PDF: the key inside its signature (checked first, so a damaged one isn't fingerprinted).
+    const split = splitSignedPdf(new Uint8Array(readFileSync(target)));
+    if (!split) throw new Error("That PDF isn't signed by Ferret");
+    process.stdout.write(`${(await verifySig(split.signature, split.pdf, "ferret-export")).fingerprint}\n`);
+    return 0;
   } else if (target.endsWith(".zip")) {
     const entries = unzipSync(new Uint8Array(readFileSync(target)));
     const pub = Object.keys(entries).find((n) => n.endsWith("ferret-signing-key.pub"));
@@ -191,7 +201,7 @@ async function configCommand(args: string[], config: Config) {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function exportCommand(args: string[], config: Config) {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { out: { type: "string" }, parts: { type: "string" }, verify: { type: "boolean" } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { out: { type: "string" }, parts: { type: "string" }, verify: { type: "boolean" }, pdf: { type: "boolean" } } });
   const what = positionals.join(" ").trim();
   if (!what) throw new Usage("export <item id | words>");
   const parts = values.parts?.split(",").map((p) => p.trim()).filter(Boolean);
@@ -210,10 +220,10 @@ async function exportCommand(args: string[], config: Config) {
     }
     id = (exact[0] ?? found[0]!).id;
   }
-  const to = await downloadExport(s, id, { dir: values.out, parts });
+  const to = await downloadExport(s, id, { dir: values.out, parts, pdf: values.pdf });
   process.stdout.write(`Saved ${to}\n`);
   if (!values.verify) return 0;
-  const r = await verifyExport(to, config.trust?.exports ?? []);
+  const r = values.pdf ? await verifyPdf(to, config.trust?.exports ?? []) : await verifyExport(to, config.trust?.exports ?? []);
   print(r, false);
   return exitFor([r]);
 }

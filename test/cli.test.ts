@@ -58,8 +58,17 @@ describe("ferret", () => {
     assert.equal((await ferret(["verify", path.join(fixtures, "export.zip")], env)).code, 3);
   });
 
-  it("fingerprint of an export is the household's", async () => {
+  it("fingerprint of an export, and of a signed PDF, is the household's", async () => {
     assert.equal((await ferret(["fingerprint", path.join(fixtures, "export.zip")])).out.trim(), exportKey);
+    assert.equal((await ferret(["fingerprint", path.join(fixtures, "export.pdf")])).out.trim(), exportKey);
+  });
+
+  it("verify: a signed PDF by its trusted key", async () => {
+    const env = freshConfig();
+    await ferret(["trust", "add", "exports", exportKey, "--name", "Home"], env);
+    const r = await ferret(["verify", path.join(fixtures, "export.pdf")], env);
+    assert.equal(r.code, 0);
+    assert.match(r.out, /good — signed by Home/);
   });
 
   it("export: finds the thing by words and saves its signed ZIP, then verifies it", async () => {
@@ -70,6 +79,10 @@ describe("ferret", () => {
       if (req.url?.startsWith("/api/v1/items?q=")) {
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify({ data: [{ id: "0b6f1a52-1111-4222-8333-444455556666", name: "Cordless drill", place: "Garage" }] }));
+      } else if (req.url?.startsWith("/api/v1/items/0b6f1a52-1111-4222-8333-444455556666/sheet.pdf")) {
+        res.setHeader("content-type", "application/pdf");
+        res.setHeader("content-disposition", `attachment; filename="Cordless drill.pdf"`);
+        res.end(readFileSync(path.join(fixtures, "export.pdf")));
       } else if (req.url?.startsWith("/api/v1/items/0b6f1a52-1111-4222-8333-444455556666/export.zip")) {
         res.setHeader("content-type", "application/zip");
         res.setHeader("content-disposition", `attachment; filename="Cordless drill.zip"; filename*=UTF-8''Cordless%20drill.zip`);
@@ -87,7 +100,10 @@ describe("ferret", () => {
     await ferret(["trust", "add", "exports", exportKey], env);
     const out = mkdtempSync(path.join(tmpdir(), "ferret-out-"));
     const r = await ferret(["export", "cordless", "drill", "--out", out, "--verify"], env);
+    const p = await ferret(["export", "cordless drill", "--pdf", "--out", out, "--verify"], env);
     server.close();
+    assert.equal(p.code, 0, p.err);
+    assert.match(p.out, /Saved .*Cordless drill\.pdf/);
     assert.equal(r.code, 0, r.err);
     assert.equal(auth, "Bearer ferret_testkey");
     assert.match(r.out, /Saved .*Cordless drill\.zip/);

@@ -36,12 +36,12 @@ export async function search(s: Server, words: string, limit = 20): Promise<Foun
   return page.data.map((i) => ({ id: i.id, name: i.name, place: i.place }));
 }
 
-/** Downloads a thing's signed export into `dir` (or to `file`); returns where it went. */
-export async function downloadExport(s: Server, itemId: string, opts: { dir?: string; file?: string; parts?: string[] }) {
+/** Downloads a thing's signed export (its ZIP, or with `pdf` its signed PDF) into `dir` (or to `file`); returns where. */
+export async function downloadExport(s: Server, itemId: string, opts: { dir?: string; file?: string; parts?: string[]; pdf?: boolean }) {
   const q = opts.parts ? `?parts=${opts.parts.join(",")}` : "";
-  const res = await call(s, `/items/${encodeURIComponent(itemId)}/export.zip${q}`);
+  const res = await call(s, `/items/${encodeURIComponent(itemId)}/${opts.pdf ? "sheet.pdf" : "export.zip"}${q}`);
   const disposition = res.headers.get("content-disposition") ?? "";
-  const name = decodeURIComponent(disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1] ?? "") || disposition.match(/filename="([^"]+)"/)?.[1] || `${itemId}.zip`;
+  const name = decodeURIComponent(disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1] ?? "") || disposition.match(/filename="([^"]+)"/)?.[1] || `${itemId}.${opts.pdf ? "pdf" : "zip"}`;
   const to = opts.file ?? path.join(opts.dir ?? ".", path.basename(name));
   await pipeline(Readable.fromWeb(res.body! as import("node:stream/web").ReadableStream), createWriteStream(to));
   return to;

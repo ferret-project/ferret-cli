@@ -177,3 +177,46 @@ export async function verifyBackup(dir: string, snapshot: string, trusted: Trust
   Object.assign(report, trustOf(report.fingerprint!, trusted, report.warnings));
   return report;
 }
+
+// ── A thing's signed PDF (drawn by the server; Ferret's lib/item-pdf.ts) ───────────────────────────────────────────
+
+const PDF_SIGNATURE_START = "\n%FERRET-SIGNATURE\n";
+const PDF_SIGNATURE_END = "%END-FERRET-SIGNATURE\n";
+
+/** The PDF and its signature: the block after %%EOF, each line a PDF comment. Null when there's none. */
+export function splitSignedPdf(bytes: Uint8Array): { pdf: Uint8Array; signature: string } | null {
+  const tail = new TextDecoder("latin1").decode(bytes.subarray(Math.max(0, bytes.length - 2048)));
+  const at = tail.lastIndexOf(PDF_SIGNATURE_START);
+  if (at < 0 || !tail.endsWith(PDF_SIGNATURE_END)) return null;
+  const cut = bytes.length - (tail.length - at);
+  const block = tail.slice(at + PDF_SIGNATURE_START.length, tail.length - PDF_SIGNATURE_END.length);
+  return { pdf: bytes.subarray(0, cut), signature: `${block.split("\n").filter(Boolean).map((l) => l.replace(/^%/, "")).join("\n")}\n` };
+}
+
+export const isPdf = (target: string) => {
+  if (statSync(target).isDirectory()) return false;
+  const head = readFileSync(target).subarray(0, 5).toString("latin1");
+  return head === "%PDF-";
+};
+
+/** A thing's signed PDF: the signature over every byte before it, by a key you trust. */
+export async function verifyPdf(target: string, trusted: Trusted[]): Promise<Report> {
+  const bytes = new Uint8Array(readFileSync(target));
+  const report: Report = { what: path.basename(target), verdict: "bad", fingerprint: null, trustedAs: null, checked: [], problems: [], warnings: [] };
+  const split = splitSignedPdf(bytes);
+  if (!split) {
+    report.verdict = "unsigned";
+    report.problems.push("It isn't signed by Ferret (a printout, or saved from another app)");
+    return report;
+  }
+  try {
+    const signed = await verify(split.signature, split.pdf, EXPORT_NAMESPACE);
+    report.fingerprint = signed.fingerprint;
+    report.checked.push(`signature by ${signed.fingerprint}`, `${split.pdf.length} bytes of PDF`);
+  } catch (e) {
+    report.problems.push(`It changed after it was signed, or the signature is damaged: ${(e as Error).message}`);
+    return report;
+  }
+  Object.assign(report, trustOf(report.fingerprint!, trusted, report.warnings));
+  return report;
+}

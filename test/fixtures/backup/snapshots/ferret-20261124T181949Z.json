@@ -1,0 +1,29 @@
+{
+ "version": 1,
+ "app": "ferret",
+ "createdAt": "2026-11-24T18:19:49.653Z",
+ "kekId": "fcda323381740d65",
+ "dbSha256": "424c0aed5080fc1d68654cd7af75ee55af45852eebf003f4c319a9cd3b4bd72f",
+ "dbEncSha256": "3cbc4b328c2ccd6a2daf880aa72e436c9d25b001857d3542b9832039fda676e0",
+ "files": [
+  {
+   "key": "l9gJq5VZj5xpq5eJpatyCgqciBRXx6Bk/9f09e171-9331-478a-bd28-d04cf8689013",
+   "size": 3148,
+   "sha256": "374d9edc674fb3cb74cff7efe84898accf54d7e54bd178dd638bc5f5a0962933"
+  },
+  {
+   "key": "l9gJq5VZj5xpq5eJpatyCgqciBRXx6Bk/9f09e171-9331-478a-bd28-d04cf8689013.thumb",
+   "size": 619,
+   "sha256": "954b15871b10a8bfdaeadc06bd6043ec53e2e549a7fff23b411d88bc11fe75dd"
+  },
+  {
+   "key": "l9gJq5VZj5xpq5eJpatyCgqciBRXx6Bk/ae25ff67-421c-4549-a31c-1e283adc3f76",
+   "size": 53,
+   "sha256": "a0e017df290b80f37643ea6392dcd2c91ad7bf72f090a0d2ae2ff773991b3154"
+  }
+ ],
+ "counts": {
+  "items": 1,
+  "attachments": 2
+ }
+}

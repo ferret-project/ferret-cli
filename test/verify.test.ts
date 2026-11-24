@@ -9,7 +9,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { fingerprint, parsePublicKey, sign } from "../src/sshsig.ts";
-import { snapshotsIn, verifyBackup, verifyExport } from "../src/verify.ts";
+import { snapshotsIn, verifyBackup, verifyExport, verifyPdf } from "../src/verify.ts";
 
 const fixtures = path.join(import.meta.dirname, "fixtures");
 const EXPORT = path.join(fixtures, "export.zip");
@@ -151,5 +151,32 @@ describe("a backup", () => {
     rmSync(path.join(dir, "files", manifest.files[0].key));
     assert.deepEqual((await verifyBackup(dir, snap!, [])).problems, [`files/${manifest.files[0].key} is missing`]);
     assert.equal((await verifyBackup(BACKUP, snap!, [{ fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }])).verdict, "untrusted");
+  });
+});
+
+describe("a thing's signed PDF", () => {
+  const PDF = path.join(fixtures, "export.pdf");
+  it("is good, signed by the household key", async () => {
+    const r = await verifyPdf(PDF, [{ fingerprint: exportKey, name: "Home" }]);
+    assert.equal(r.verdict, "good");
+    assert.equal(r.trustedAs, "Home");
+  });
+  it("one byte changed: bad", async () => {
+    const bytes = readFileSync(PDF);
+    bytes[300]! ^= 1;
+    const out = path.join(scratch(), "changed.pdf");
+    writeFileSync(out, bytes);
+    const r = await verifyPdf(out, [{ fingerprint: exportKey }]);
+    assert.equal(r.verdict, "bad");
+    assert.match(r.problems[0]!, /changed after it was signed/);
+  });
+  it("without its signature block (a printout): unsigned", async () => {
+    const bytes = readFileSync(PDF).toString("latin1");
+    const out = path.join(scratch(), "plain.pdf");
+    writeFileSync(out, Buffer.from(bytes.slice(0, bytes.lastIndexOf("\n%FERRET-SIGNATURE\n")), "latin1"));
+    assert.equal((await verifyPdf(out, [])).verdict, "unsigned");
+  });
+  it("by a key you don't trust: untrusted", async () => {
+    assert.equal((await verifyPdf(PDF, [{ fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }])).verdict, "untrusted");
   });
 });

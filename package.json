@@ -1,6 +1,6 @@
 {
   "name": "ferret-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Check what a Ferret signed — a thing's export or a backup — and export from one",
   "license": "MIT",
   "type": "module",

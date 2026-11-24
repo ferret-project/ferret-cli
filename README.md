@@ -3,10 +3,12 @@
 Check what a [Ferret](https://github.com/ferret-project/ferret) signed — a thing's export or a backup — and export
 things from your Ferret.
 
-Ferret signs two kinds of files with Ed25519 keys, as OpenSSH signatures:
+Ferret signs three kinds of files with Ed25519 keys, as OpenSSH signatures:
 
-- **A thing's export** (Print or export → Download signed ZIP): its Markdown, `item.json`, photos and documents, with
-  `SHA256SUMS` signed by your **household's** key.
+- **A thing's signed PDF** (Print or export → Download signed PDF): drawn by the server and signed by your
+  **household's** key, the signature appended after the PDF's end (PDF readers skip it).
+- **A thing's export** (Print or export → Download signed ZIP): its Markdown, PDF, `item.json`, photos and documents,
+  with `SHA256SUMS` signed by your **household's** key.
 - **Backups**: each snapshot's manifest (the database copy's and every file's SHA-256) signed by the **server's** key.
 
 `ferret verify` checks the signature, every file against it, and that the key is one **you** said to trust — so the
@@ -42,6 +44,7 @@ compare it with Settings once.
 ## Verify
 
 ```bash
+ferret verify "Cordless drill.pdf"          # a signed PDF
 ferret verify "Cordless drill.zip"          # an export (or the folder it unzips to)
 ferret verify /mnt/nas/ferret-backups       # the newest backup in a backup folder
 ferret verify /mnt/nas/ferret-backups --all # every backup there
@@ -64,7 +67,11 @@ ferret verify export.zip --json             # for scripts
 
 Checking a backup needs no `FILES_KEY`: it checks the encrypted files as they are, not what's inside them.
 
-`ferret fingerprint <file.pub | export.zip | backup folder>` prints the fingerprint of the key a file carries.
+A PDF printed from the browser (Print, then Save as PDF) isn't signed: `ferret verify` says so (exit 4). Download the
+signed PDF instead.
+
+`ferret fingerprint <file.pub | export.zip | signed .pdf | backup folder>` prints the fingerprint of the key a file
+carries.
 
 ## Export from your Ferret
 
@@ -74,6 +81,7 @@ Make an API key in Ferret (**Settings → Claude & API → New key**; read-only 
 ferret config set url https://ferret.example.com
 ferret config set api-key        # paste it; it isn't left in your shell history
 ferret export "cordless drill" --out ~/exports --verify
+ferret export "cordless drill" --pdf --verify      # the signed PDF instead of the ZIP
 ferret export 7e7fa822-ce72-400b-8ad7-264d8670fcd0 --parts photos,documents,warranties
 ```
 
